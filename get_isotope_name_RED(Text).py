@@ -1,0 +1,228 @@
+import re, time, pandas, openpyxl, math
+from tkinter import *
+from tkinter import filedialog as fd
+import data
+# red_s, red_f = '\033[31m', '\033[0m'
+# blue_s, blue_f = '\033[34m', '\033[0m'
+Fi = 5 * (10**6)
+Na = 0.6022
+
+
+root = Tk()
+root.withdraw()
+
+
+#  Данные из справочника
+def get_list_spr(file, rez_list_spr):
+    with open(file) as spr:
+        all_sheet_lst = spr.read().split('\n')
+
+        for i in all_sheet_lst:
+            temporary_lst = i.split()
+            if len(temporary_lst) == 4:
+                if re.findall(r'[0-9]{2,5}\.[0-9]{1,5}', temporary_lst[0]) != []:
+                    rez_list_spr.append([temporary_lst[0], temporary_lst[2]])
+    return rez_list_spr
+
+
+#  Данные из файла GENIE2000
+def get_list_genie2000_data(file, rez_list_data):
+    with open(file) as data:
+        all_sheet_lst = data.read().split('\n')  # список строк исходника
+
+        for i in all_sheet_lst:
+            temporary_lst = i.split()  # сплитим каждую строку по пробелам
+            try:
+                if re.findall(r'\.[0-9]{1,10}E', temporary_lst[-1]):  # проверяем на валидность
+                    # ______________проблемное место с номером пика______________________
+                    if ''.join(re.findall(r'[a-z A-Z]', temporary_lst[0])) == temporary_lst[0]:
+                        rez_list_data.append([temporary_lst[0] + temporary_lst[1], temporary_lst[5:9]])
+                    else:
+                        rez_list_data.append([temporary_lst[0], temporary_lst[3:7]])
+                    # --------------------------------------------------------------------
+            except:
+                continue
+    return rez_list_data
+
+
+#  Данные для формулы
+def get_list_for_formula(file, rez_list_for_formula):
+    with open(file) as spr:
+        all_sheet_lst3 = spr.read().split('\n')
+        t = float('{:.4f}'.format(float(all_sheet_lst3[0].split()[0])))
+        Ms = float('{:.4f}'.format(float(all_sheet_lst3[1].split()[0])))
+
+        length = len(all_sheet_lst3)
+        i = 0
+        while i < length:
+            temporary_lst = all_sheet_lst3[i].split()
+            if len(temporary_lst) == 1:
+                # Если действительно строка с названием элемента
+                if re.findall(r'[A-Za-z]+-[0-9]+', temporary_lst[0]):
+                    flag = True
+                    him_elem = temporary_lst[0]
+                    # Если это не конец файла
+                    if i + 1 != length:
+                        # Сплитим след. строку со всеми данными
+                        next_line = all_sheet_lst3[i + 1].split()
+                        i += 1
+                        # Если строка нормальная
+                        if 7 <= len(next_line) <= 8:
+                            # Если строка нормальная, извлекаем нужные данные
+                            M = int(next_line[0])
+                            Q = float('{:.4f}'.format(float(next_line[1])))
+                            a = float('{:.4f}'.format(float(next_line[2])))
+                            try:
+                                i100 = float('{:.4f}'.format(float(next_line[5])))
+                            except:
+                                continue
+
+                            i += 1
+                            # Строка с конкретными значениями
+                            next_line = all_sheet_lst3[i].split()
+                            while True:
+                                if next_line == []:
+                                    break
+                                # Является ли строкой с конкретными значениями
+                                data_list = re.findall(r'[0-9]+\.[0-9]+', next_line[0])
+                                if data_list != []:
+                                    # Если можем достать интенсивность
+                                    search_Intensive = re.findall(r'[0-9]+\.[0-9]+|[0-9]+', next_line[2])
+                                    if search_Intensive != []:
+                                        #  Тут же достаём энергию
+                                        E = next_line[0]
+
+                                        # Достали интенсивность
+                                        my_I_in_percent = float('{:.4f}'.format(float(next_line[2])))
+                                        I = float('{:.4f}'.format(float(i100 * my_I_in_percent / 100)))
+
+                                        if flag is True:
+                                            if him_elem == 'Si-28':
+                                                him_elem = 'natSi'
+                                            else:
+                                                him_elem = him_elem.split('-')
+                                                him_elem = him_elem[1] + him_elem[0]
+                                            flag = False
+
+                                        rez_list_for_formula.append({him_elem: {
+                                            'E': E,
+                                            'M': M,
+                                            'Q': Q,
+                                            'a': a,
+                                            'I': I
+                                        }})
+                                        i += 1
+
+                                        try:
+                                            next_line = all_sheet_lst3[i].split()
+                                        except:
+                                            i += 1
+                                            break
+                                else:
+                                    i += 1
+                                    break
+            i += 1
+            if i < length:
+                next_line = all_sheet_lst3[i].split()
+    return rez_list_for_formula, t, Ms
+
+
+print('_____________ВНИМАНИЕ!_____________')
+print('Первое окно - выбор файла GENIE-2000')
+print('Второе окно - выбор файла со справочными данными')
+print('Третье окно - выбор файла со справочными данными')
+print('Четвёртое окно - выбор имени итогового файла и папки для сохранения')
+print('________________________')
+
+
+rez_list_data = data.get_list_genie2000_data(fd.askopenfilename(), [])
+rez_list_spr = data.get_list_spr(fd.askopenfilename(), [])
+rez_list_for_formula, t, Ms = data.get_list_for_formula(fd.askopenfilename(), [])
+
+
+#  ______________________________РЕЗУЛЬТАТЫ_______________________________________
+empty_rez_file = fd.asksaveasfilename(
+    filetypes=(("TXT files", "*.txt"),
+               ("HTML files", "*.html;*.htm"),
+               ("All files", "*.*")))
+rez_file = open(empty_rez_file, 'w')
+rez_file.write('-------------------------------------------------\n')
+rez_file.write(' ' + 'Isotope ' + '      ' + 'Egi' + '           ' + '  Si' + '          ' + 'dSi' + '\n')
+
+rez_dict_elem_and_params = {}
+for pik in rez_list_data:
+    mx = float(pik[1][0]) + 0.5
+    mn = float(pik[1][0]) - 0.5
+    for energy in rez_list_spr:
+
+        E_dict = energy[0]
+
+        if mn <= float(E_dict) <= mx:
+            # print('-------------------------------------------------')
+            # print(energy[1], energy[0], pik[1][2], pik[1][3], sep='       ')
+            rez_file.write('-------------------------------------------------\n')
+            rez_file.write(' ' + energy[1] + '      ' + energy[0] + '      ' + pik[1][2] + '       ' + pik[1][3] + '\n')
+
+            # Теперь перебираем весь результат из файла .dat
+            for elem in rez_list_for_formula:
+                #  Если хим элементы равны
+                if list(elem.keys())[0] == energy[1]:
+                    # Энергия экземпляра конкретного хим.элемента в таблице dat
+                    E_temp = float(elem[list(elem.keys())[0]]['E'])
+                    #  Если примерно равны энергии
+                    if E_temp - 0.5 <= float(E_dict) <= E_temp + 0.5:
+
+                        #  ___________РАССЧЁТЫ_______________
+                        EGenie = float('{:.4f}'.format(float(pik[1][0])))
+                        S = float('{:.4f}'.format(float(pik[1][2])))
+
+                        # Считаем эпсилум = 10**lam
+                        lam = (-1.08 * 10**(-4) * EGenie) - 2.726 + (203.2/EGenie) - ((2.533 * (10**4)) / (EGenie**2)) \
+                        + ((1.395 * (10**6)) / (EGenie**3)) - ((2.834 * (10**7)) / (EGenie**4))
+                        e = float('{:.6f}'.format(10**lam))
+
+                        M = float(elem[list(elem.keys())[0]]['M'])
+                        a = float(elem[list(elem.keys())[0]]['a'])
+                        I = float(elem[list(elem.keys())[0]]['I'])
+                        Q = float(elem[list(elem.keys())[0]]['Q'])
+
+                        # Считаем Mx
+                        Mx = (S * M)/(Fi * Na * a * e * I * t * Q)
+
+                        # Считаем с:
+                        c = (Mx / Ms) * (10 ** 6)
+
+                        if energy[1] not in rez_dict_elem_and_params:
+                            rez_dict_elem_and_params[energy[1]] = []
+                        rez_dict_elem_and_params[energy[1]].append(
+                            {
+                             'EGenie': pik[1][0],
+                             'Edict': energy[0],
+                             'Si': pik[1][2],
+                             'dSi': pik[1][3],
+                             'Площадь =': S,
+                             'Поток(Fi)': Fi,
+                             'Na': Na,
+                             'M': M,
+                             'a': a,
+                             'I': I,
+                             't': t,
+                             'Q': Q,
+                             'e': e,
+                             'Ms': Ms,
+                             'c': c
+                             }
+                        )
+
+#  Печатаем итоговый словарь
+for key in rez_dict_elem_and_params:
+    for i in rez_dict_elem_and_params[key]:
+        print(key)
+        print(i)
+        print('c =', float('{:.3f}'.format(i['c'])))
+        print()
+    print('____________________________________________________________________________________________')
+
+rez_file.close()
+print('Готово!')
+time.sleep(2)
